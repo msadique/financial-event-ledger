@@ -1,11 +1,11 @@
-.............................................                            [100%]
+...................................................                      [100%]
 =============================== warnings summary ===============================
 ../usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1
   /usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
     from starlette.testclient import TestClient as TestClient  # noqa
 
-app/main.py:55
-  /app/app/main.py:55: DeprecationWarning: 
+app/main.py:57
+  /app/app/main.py:57: DeprecationWarning: 
           on_event is deprecated, use lifespan event handlers instead.
   
           Read more about it in the
@@ -23,8 +23,8 @@ app/main.py:55
           
     return self.router.on_event(event_type)  # ty: ignore[deprecated]
 
-app/main.py:65
-  /app/app/main.py:65: DeprecationWarning: 
+app/main.py:67
+  /app/app/main.py:67: DeprecationWarning: 
           on_event is deprecated, use lifespan event handlers instead.
   
           Read more about it in the
@@ -46,15 +46,16 @@ app/api/routes_events.py                27      0      4      0   100%
 app/clients/__init__.py                  0      0      0      0   100%
 app/clients/account_service.py          44      0     22      0   100%
 app/core/__init__.py                     0      0      0      0   100%
-app/core/config.py                      24      0      0      0   100%
+app/core/config.py                      30      0      0      0   100%
 app/core/errors.py                      35      0      4      0   100%
 app/core/logging.py                     12      0      2      0   100%
 app/core/rate_limit.py                  40      0      8      0   100%
-app/core/tracing.py                     25      0      0      0   100%
+app/core/telemetry.py                   38      0     12      0   100%
+app/core/tracing.py                     37      0      6      0   100%
 app/db/__init__.py                       0      0      0      0   100%
 app/db/models.py                        42      0      0      0   100%
 app/db/session.py                       11      0      2      0   100%
-app/main.py                            122      0     12      0   100%
+app/main.py                            125      0     12      0   100%
 app/repositories/__init__.py             0      0      0      0   100%
 app/repositories/audit.py               16      0      2      0   100%
 app/repositories/delivery_queue.py      31      0      2      0   100%
@@ -66,7 +67,7 @@ app/services/__init__.py                 0      0      0      0   100%
 app/services/async_fallback.py          99      0     12      0   100%
 app/services/event_service.py           88      0     12      0   100%
 --------------------------------------------------------------------------------
-TOTAL                                  704      0     98      0   100%
+TOTAL                                  763      0    116      0   100%
 Coverage XML written to file /reports/gateway-coverage.xml
 Required test coverage of 80.0% reached. Total coverage: 100.00%
-45 passed, 5 warnings in 0.68s
+51 passed, 5 warnings in 0.74s

@@ -17,6 +17,7 @@ from app.core.config import get_settings
 from app.core.errors import install_exception_handlers
 from app.core.logging import configure_logging
 from app.core.rate_limit import SlidingWindowRateLimiter
+from app.core.telemetry import configure_telemetry, shutdown_telemetry
 from app.core.tracing import current_trace_id, normalize_trace_id, tracing_middleware
 from app.db.session import Base, SessionLocal, engine
 from app.repositories.delivery_queue import DeliveryQueueRepository
@@ -42,8 +43,9 @@ RATE_LIMIT_REJECTIONS = Counter(
     ["path"],
 )
 
-app = FastAPI(title="Event Ledger Gateway", version="0.3.0")
+app = FastAPI(title="Event Ledger Gateway", version="0.4.0")
 install_exception_handlers(app)
+app.state.otel_tracer_provider = None
 app.state.rate_limiter = SlidingWindowRateLimiter(
     settings.rate_limit_requests,
     settings.rate_limit_window_seconds,
@@ -66,20 +68,20 @@ async def startup():
 async def shutdown():
     stop_event = app.state.async_fallback_stop
     task = app.state.async_fallback_task
-    if stop_event is None or task is None:
-        return
+    if stop_event is not None and task is not None:
+        stop_event.set()
+        try:
+            await asyncio.wait_for(
+                task,
+                timeout=max(2.0, settings.async_fallback_poll_seconds + 1.0),
+            )
+        except TimeoutError:
+            task.cancel()
+        finally:
+            app.state.async_fallback_task = None
+            app.state.async_fallback_stop = None
 
-    stop_event.set()
-    try:
-        await asyncio.wait_for(
-            task,
-            timeout=max(2.0, settings.async_fallback_poll_seconds + 1.0),
-        )
-    except TimeoutError:
-        task.cancel()
-    finally:
-        app.state.async_fallback_task = None
-        app.state.async_fallback_stop = None
+    shutdown_telemetry(app.state.otel_tracer_provider)
 
 
 def _is_rate_limit_exempt(path: str) -> bool:
@@ -211,3 +213,7 @@ def metrics():
 app.include_router(events_router)
 app.include_router(accounts_router)
 app.include_router(audit_router)
+
+app.state.otel_tracer_provider = configure_telemetry(
+    app, settings, instrument_httpx=True
+)

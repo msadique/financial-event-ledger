@@ -4,52 +4,109 @@ services:
     environment:
       DATABASE_URL: sqlite:////data/account.db
       LOG_LEVEL: INFO
+      OTEL_ENABLED: 'true'
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORT_TIMEOUT_SECONDS: '5'
+      OTEL_SERVICE_VERSION: 0.4.0
+      OTEL_ENVIRONMENT: docker
     volumes:
-      - account-data:/data
-      - ./reports:/reports
+    - account-data:/data
+    - ./reports:/reports
     ports:
-      - "8081:8081"
+    - 8081:8081
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8081/health')
       interval: 5s
       timeout: 3s
       retries: 10
-    networks: [event-ledger]
-
+    networks:
+    - event-ledger
   event-gateway:
     build: ./event-gateway
     environment:
       DATABASE_URL: sqlite:////data/gateway.db
       ACCOUNT_SERVICE_URL: http://account-service:8081
-      ACCOUNT_SERVICE_TIMEOUT_SECONDS: "2"
-      ACCOUNT_SERVICE_MAX_ATTEMPTS: "3"
-      CIRCUIT_BREAKER_FAILURE_THRESHOLD: "5"
-      CIRCUIT_BREAKER_RECOVERY_SECONDS: "30"
-      RATE_LIMIT_ENABLED: "true"
-      RATE_LIMIT_REQUESTS: "120"
-      RATE_LIMIT_WINDOW_SECONDS: "60"
-      ASYNC_FALLBACK_ENABLED: "true"
-      ASYNC_FALLBACK_POLL_SECONDS: "1"
-      ASYNC_FALLBACK_BATCH_SIZE: "25"
-      ASYNC_FALLBACK_BASE_BACKOFF_SECONDS: "1"
-      ASYNC_FALLBACK_MAX_BACKOFF_SECONDS: "60"
-      ASYNC_FALLBACK_JITTER_SECONDS: "0.25"
+      ACCOUNT_SERVICE_TIMEOUT_SECONDS: '2'
+      ACCOUNT_SERVICE_MAX_ATTEMPTS: '3'
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: '5'
+      CIRCUIT_BREAKER_RECOVERY_SECONDS: '30'
+      RATE_LIMIT_ENABLED: 'true'
+      RATE_LIMIT_REQUESTS: '120'
+      RATE_LIMIT_WINDOW_SECONDS: '60'
+      ASYNC_FALLBACK_ENABLED: 'true'
+      ASYNC_FALLBACK_POLL_SECONDS: '1'
+      ASYNC_FALLBACK_BATCH_SIZE: '25'
+      ASYNC_FALLBACK_BASE_BACKOFF_SECONDS: '1'
+      ASYNC_FALLBACK_MAX_BACKOFF_SECONDS: '60'
+      ASYNC_FALLBACK_JITTER_SECONDS: '0.25'
       LOG_LEVEL: INFO
+      OTEL_ENABLED: 'true'
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORT_TIMEOUT_SECONDS: '5'
+      OTEL_SERVICE_VERSION: 0.4.0
+      OTEL_ENVIRONMENT: docker
     volumes:
-      - gateway-data:/data
-      - ./reports:/reports
+    - gateway-data:/data
+    - ./reports:/reports
     ports:
-      - "8080:8080"
+    - 8080:8080
     depends_on:
       account-service:
         condition: service_healthy
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      test:
+      - CMD
+      - python
+      - -c
+      - import urllib.request; urllib.request.urlopen('http://localhost:8080/health')
       interval: 5s
       timeout: 3s
       retries: 10
-    networks: [event-ledger]
-
+    networks:
+    - event-ledger
+  prometheus:
+    image: prom/prometheus:v3.12.0
+    command:
+    - --config.file=/etc/prometheus/prometheus.yml
+    volumes:
+    - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+    - 9090:9090
+    networks:
+    - event-ledger
+  jaeger:
+    image: jaegertracing/jaeger:2.19.0
+    command:
+    - --config
+    - /etc/jaeger/config.yml
+    volumes:
+    - ./jaeger-config.yaml:/etc/jaeger/config.yml:ro
+    ports:
+    - 16686:16686
+    - 8888:8888
+    depends_on:
+    - prometheus
+    networks:
+    - event-ledger
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.155.0
+    command:
+    - --config=/etc/otelcol-contrib/config.yaml
+    volumes:
+    - ./otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+    ports:
+    - 4317:4317
+    - 4318:4318
+    - 13133:13133
+    - 8889:8889
+    depends_on:
+    - jaeger
+    networks:
+    - event-ledger
   functional-tests:
     build: ./functional-tests
     environment:
@@ -60,39 +117,41 @@ services:
         condition: service_healthy
       event-gateway:
         condition: service_healthy
-    profiles: [test]
-    networks: [event-ledger]
-
+    profiles:
+    - test
+    networks:
+    - event-ledger
   contract-consumer:
     build: ./event-gateway
     user: root
     environment:
       PACT_DIR: /contracts/pacts
-      PACT_DO_NOT_TRACK: "1"
-      ASYNC_FALLBACK_ENABLED: "false"
-      RATE_LIMIT_ENABLED: "false"
+      PACT_DO_NOT_TRACK: '1'
+      ASYNC_FALLBACK_ENABLED: 'false'
+      RATE_LIMIT_ENABLED: 'false'
     volumes:
-      - ./contract-tests:/contracts
+    - ./contract-tests:/contracts
     command: python -m pytest -q /contracts/consumer
-    profiles: [test]
-    networks: [event-ledger]
-
+    profiles:
+    - test
+    networks:
+    - event-ledger
   contract-provider:
     build: ./account-service
     user: root
     environment:
       DATABASE_URL: sqlite:////tmp/contract-account.db
       PACT_DIR: /contracts/pacts
-      PACT_DO_NOT_TRACK: "1"
+      PACT_DO_NOT_TRACK: '1'
     volumes:
-      - ./contract-tests:/contracts
+    - ./contract-tests:/contracts
     command: python -m pytest -q /contracts/provider
-    profiles: [test]
-    networks: [event-ledger]
-
+    profiles:
+    - test
+    networks:
+    - event-ledger
 volumes:
-  gateway-data:
-  account-data:
-
+  gateway-data: null
+  account-data: null
 networks:
-  event-ledger:
+  event-ledger: null

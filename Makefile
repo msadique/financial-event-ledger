@@ -1,123 +1,239 @@
-.PHONY: help build up up-detached up-build down restart ps logs logs-gateway logs-account \
-	test test-account test-gateway test-docker contract-test \
+.DEFAULT_GOAL := help
+
+COMPOSE ?= docker compose
+
+.PHONY: help \
+	build up up-detached up-build down restart ps \
+	logs logs-gateway logs-account logs-collector logs-jaeger logs-prometheus \
+	test test-account test-gateway test-docker \
+	contract-test \
 	coverage coverage-account coverage-gateway \
-	functional-test test-resiliency test-persistence verify clean clean-all
+	functional-test \
+	test-resiliency test-persistence test-tracing test-monitoring \
+	verify \
+	clean docker-clean clean-all
+
+
+# ------------------------------------------------------------
+# Help
+# ------------------------------------------------------------
 
 help:
 	@echo "Available commands:"
+	@echo ""
+	@echo "Docker:"
 	@echo "  make build             Build Docker images"
 	@echo "  make up                Build and start services in foreground"
 	@echo "  make up-detached       Build and start services in background"
-	@echo "  make up-build          Alias for up-detached"
+	@echo "  make up-build          Alias for make up-detached"
 	@echo "  make down              Stop and remove containers"
-	@echo "  make restart           Restart services"
-	@echo "  make ps                Show service status"
-	@echo "  make logs              Follow all logs"
-	@echo "  make logs-gateway      Follow Gateway logs"
+	@echo "  make restart           Restart the complete stack"
+	@echo "  make ps                Show container status"
+	@echo ""
+	@echo "Logs:"
+	@echo "  make logs              Follow logs from all services"
+	@echo "  make logs-gateway      Follow Event Gateway logs"
 	@echo "  make logs-account      Follow Account Service logs"
-	@echo "  make test              Run service tests in Docker"
+	@echo "  make logs-collector    Follow OpenTelemetry Collector logs"
+	@echo "  make logs-jaeger       Follow Jaeger logs"
+	@echo "  make logs-prometheus   Follow Prometheus logs"
+	@echo ""
+	@echo "Tests:"
+	@echo "  make test              Run all service tests in Docker"
+	@echo "  make test-account      Run Account Service tests"
+	@echo "  make test-gateway      Run Event Gateway tests"
 	@echo "  make contract-test     Generate and verify Pact contracts"
 	@echo "  make coverage          Generate branch coverage reports"
 	@echo "  make functional-test   Run tests against live APIs"
-	@echo "  make test-resiliency   Validate async fallback and recovery"
+	@echo ""
+	@echo "Operational validation:"
+	@echo "  make test-resiliency   Validate fallback queue and recovery"
 	@echo "  make test-persistence  Validate SQLite persistence"
+	@echo "  make test-tracing      Validate Collector and Jaeger traces"
+	@echo "  make test-monitoring   Validate spanmetrics, Prometheus, and Jaeger Monitor"
 	@echo "  make verify            Run the complete validation workflow"
-	@echo "  make clean             Remove containers and volumes"
+	@echo ""
+	@echo "Cleanup:"
+	@echo "  make clean             Remove containers, volumes, and test artifacts"
+	@echo "  make docker-clean      Remove unused Docker images"
+	@echo "  make clean-all         Run clean and docker-clean"
+
+
+# ------------------------------------------------------------
+# Docker lifecycle
+# ------------------------------------------------------------
 
 build:
-	docker compose build
+	$(COMPOSE) build
 
 up:
-	docker compose up --build
+	$(COMPOSE) up --build
 
 up-detached:
-	docker compose up --build -d --wait
+	$(COMPOSE) up --build -d --wait
 
 up-build: up-detached
 
 down:
-	docker compose down
+	$(COMPOSE) --profile test down --remove-orphans
 
 restart:
-	docker compose down
-	docker compose up --build -d --wait
+	$(COMPOSE) --profile test down --remove-orphans
+	$(COMPOSE) up --build -d --wait
 
 ps:
-	docker compose ps
+	$(COMPOSE) ps
+
+
+# ------------------------------------------------------------
+# Logs
+# ------------------------------------------------------------
 
 logs:
-	docker compose logs -f
+	$(COMPOSE) logs -f
 
 logs-gateway:
-	docker compose logs -f event-gateway
+	$(COMPOSE) logs -f event-gateway
 
 logs-account:
-	docker compose logs -f account-service
+	$(COMPOSE) logs -f account-service
 
-# Run all unit and integration tests inside Docker.
+logs-collector:
+	$(COMPOSE) logs -f otel-collector
+
+logs-jaeger:
+	$(COMPOSE) logs -f jaeger
+
+logs-prometheus:
+	$(COMPOSE) logs -f prometheus
+
+
+# ------------------------------------------------------------
+# Unit and integration tests
+#
+# -T disables pseudo-TTY allocation. This keeps pytest output visible and
+# avoids terminal issues when running from Cygwin, Git Bash, or CI.
+# ------------------------------------------------------------
+
 test: test-account test-gateway
 
 test-docker: test
 
 test-account:
-	docker compose run --build --rm account-service python -m pytest -q
+	$(COMPOSE) run --build --rm -T \
+		-e OTEL_ENABLED=false \
+		account-service \
+		python -m pytest -q -ra
 
 test-gateway:
-	docker compose run --build --rm event-gateway python -m pytest -q
+	$(COMPOSE) run --build --rm -T \
+		-e OTEL_ENABLED=false \
+		event-gateway \
+		python -m pytest -q -ra
 
-# Generate a consumer Pact with the real Gateway client, then replay it against
-# the real Account Service provider.
+
+# ------------------------------------------------------------
+# Pact contract tests
+# ------------------------------------------------------------
+
 contract-test:
 	rm -f contract-tests/pacts/*.json
-	docker compose --profile test run --build --rm contract-consumer
-	docker compose --profile test run --build --rm contract-provider
+	$(COMPOSE) --profile test run --build --rm -T \
+		contract-consumer
+	$(COMPOSE) --profile test run --build --rm -T \
+		contract-provider
 
-# Generate coverage reports inside Docker.
+
+# ------------------------------------------------------------
+# Branch-aware coverage reports
+#
+# The commands preserve the pytest exit code while also writing readable
+# text reports under reports/.
+# ------------------------------------------------------------
+
 coverage: coverage-account coverage-gateway
 
 coverage-account:
-	docker compose run --build --rm account-service \
-		sh -c "python -m pytest -q \
-		--cov=app \
-		--cov-branch \
-		--cov-report=term-missing \
-		--cov-report=xml:/reports/account-coverage.xml \
-		| tee /reports/account-coverage.txt"
+	$(COMPOSE) run --build --rm -T \
+		-e OTEL_ENABLED=false \
+		account-service \
+		sh -c 'python -m pytest -q -ra \
+			--cov=app \
+			--cov-branch \
+			--cov-report=term-missing \
+			--cov-report=xml:/reports/account-coverage.xml \
+			> /reports/account-coverage.txt 2>&1; \
+			status=$$?; \
+			cat /reports/account-coverage.txt; \
+			exit $$status'
 
 coverage-gateway:
-	docker compose run --build --rm event-gateway \
-		sh -c "python -m pytest -q \
-		--cov=app \
-		--cov-branch \
-		--cov-report=term-missing \
-		--cov-report=xml:/reports/gateway-coverage.xml \
-		| tee /reports/gateway-coverage.txt"
+	$(COMPOSE) run --build --rm -T \
+		-e OTEL_ENABLED=false \
+		event-gateway \
+		sh -c 'python -m pytest -q -ra \
+			--cov=app \
+			--cov-branch \
+			--cov-report=term-missing \
+			--cov-report=xml:/reports/gateway-coverage.xml \
+			> /reports/gateway-coverage.txt 2>&1; \
+			status=$$?; \
+			cat /reports/gateway-coverage.txt; \
+			exit $$status'
 
-# Run tests against the live Dockerized APIs.
+
+# ------------------------------------------------------------
+# Live API functional tests
+# ------------------------------------------------------------
+
 functional-test:
-	docker compose up --build -d --wait account-service event-gateway
-	docker compose --profile test run --build --rm functional-tests
+	$(COMPOSE) up --build -d --wait \
+		account-service \
+		event-gateway
+	$(COMPOSE) --profile test run --build --rm -T \
+		functional-tests
 
-# Operational validation.
+
+# ------------------------------------------------------------
+# Operational validation
+# ------------------------------------------------------------
+
 test-resiliency:
 	bash scripts/test-resiliency.sh
 
 test-persistence:
 	bash scripts/test-persistence.sh
 
-# Complete validation workflow.
+test-tracing:
+	bash scripts/test-tracing.sh
+
+test-monitoring:
+	bash scripts/test-monitoring.sh
+
+
+# ------------------------------------------------------------
+# Complete validation workflow
+# ------------------------------------------------------------
+
 verify:
-	docker compose build
+	$(COMPOSE) build
 	$(MAKE) test
 	$(MAKE) contract-test
 	$(MAKE) coverage
 	$(MAKE) functional-test
 	$(MAKE) test-resiliency
 	$(MAKE) test-persistence
+	$(MAKE) test-tracing
+	$(MAKE) test-monitoring
+
+
+# ------------------------------------------------------------
+# Cleanup
+# ------------------------------------------------------------
 
 clean:
-	docker compose --profile test down -v --remove-orphans
-	docker compose rm -f
+	$(COMPOSE) --profile test down -v --remove-orphans
+	$(COMPOSE) rm -f
 	rm -f contract-tests/pacts/*.json
 
 docker-clean:

@@ -29,10 +29,12 @@
 
 ## Latest service results
 
-- Account Service: 16 tests passed, 98.52% branch coverage.
-- Event Gateway: 45 tests passed, 100.00% statement and branch coverage.
+- Account Service: 25 tests passed, 100.00% statement and branch coverage.
+- Event Gateway: 51 tests passed, 100.00% statement and branch coverage.
 - Pact tests: 2 tests passed.
 
 ## Added edge-case coverage
 
 The added `event-gateway/tests/test_bonus_coverage.py` suite covers rate-limit validation/reset, queue record updates, zero-attempt downstream configuration, async fallback backoff/retry/orphan/rejection paths, worker loop error recovery, application startup/shutdown lifecycle branches, middleware exception handling, direct 429 trace generation, and schema validation branches.
+
+- OpenTelemetry Collector + Jaeger distributed trace visualization is implemented and validated by `make test-tracing`.

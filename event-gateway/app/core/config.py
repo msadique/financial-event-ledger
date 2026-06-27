@@ -23,6 +23,13 @@ class Settings(BaseSettings):
     async_fallback_max_backoff_seconds: float = 60.0
     async_fallback_jitter_seconds: float = 0.25
 
+    otel_enabled: bool = False
+    otel_exporter_otlp_endpoint: str = "http://localhost:4318"
+    otel_export_timeout_seconds: float = 5.0
+    otel_service_version: str = "0.4.0"
+    otel_environment: str = "local"
+    otel_excluded_urls: str = "health,metrics"
+
     log_level: str = "INFO"
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

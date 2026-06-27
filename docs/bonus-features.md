@@ -50,3 +50,16 @@ Run the operational validation:
 ```bash
 make test-resiliency
 ```
+
+## OpenTelemetry Collector and Jaeger
+
+Both FastAPI services emit OpenTelemetry spans over OTLP/HTTP to an OpenTelemetry Collector. The Collector batches and forwards traces to Jaeger, where the complete Gateway-to-Account-Service request can be visualized.
+
+```bash
+make up-build
+make test-tracing
+```
+
+Jaeger UI: `http://localhost:16686`
+
+The Gateway response includes `X-OpenTelemetry-Trace-ID`, which can be pasted directly into Jaeger. The existing `X-Trace-ID` remains available as the application correlation ID and is attached to spans as `app.correlation_id`.
