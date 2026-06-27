@@ -1,0 +1,45 @@
+services:
+  account-service:
+    build: ./account-service
+    environment:
+      DATABASE_URL: sqlite:////data/account.db
+      LOG_LEVEL: INFO
+    volumes:
+      - account-data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [event-ledger]
+
+  event-gateway:
+    build: ./event-gateway
+    environment:
+      DATABASE_URL: sqlite:////data/gateway.db
+      ACCOUNT_SERVICE_URL: http://account-service:8081
+      ACCOUNT_SERVICE_TIMEOUT_SECONDS: "2"
+      ACCOUNT_SERVICE_MAX_ATTEMPTS: "3"
+      CIRCUIT_BREAKER_FAILURE_THRESHOLD: "5"
+      CIRCUIT_BREAKER_RECOVERY_SECONDS: "30"
+      LOG_LEVEL: INFO
+    volumes:
+      - gateway-data:/data
+    ports:
+      - "8080:8080"
+    depends_on:
+      account-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health')"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks: [event-ledger]
+
+volumes:
+  gateway-data:
+  account-data:
+
+networks:
+  event-ledger:
