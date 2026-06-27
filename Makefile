@@ -12,10 +12,10 @@ logs:
 test: test-account test-gateway
 
 test-account:
-	cd account-service && pytest -q
+	docker compose run --rm account-service python -m pytest -q
 
 test-gateway:
-	cd event-gateway && pytest -q
+	docker compose run --rm event-gateway python -m pytest -q
 
 clean:
 	docker compose down -v --remove-orphans

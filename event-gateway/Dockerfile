@@ -2,7 +2,9 @@ FROM python:3.12-slim
 WORKDIR /app
 COPY pyproject.toml .
 COPY app ./app
-RUN pip install --no-cache-dir .
+COPY tests ./tests
+RUN python -m pip install --upgrade pip \
+    && python -m pip install ".[test]"
 RUN useradd --create-home appuser && mkdir -p /data && chown -R appuser:appuser /data /app
 USER appuser
 EXPOSE 8080
