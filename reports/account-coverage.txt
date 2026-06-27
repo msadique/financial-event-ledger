@@ -1,7 +1,11 @@
-.......                                                                  [100%]
+................                                                         [100%]
 =============================== warnings summary ===============================
+../usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1
+  /usr/local/lib/python3.12/site-packages/fastapi/testclient.py:1: StarletteDeprecationWarning: Using `httpx` with `starlette.testclient` is deprecated; install `httpx2` instead.
+    from starlette.testclient import TestClient as TestClient  # noqa
+
 app/main.py:21
-  /mnt/data/final-event-ledger/event-ledger/account-service/app/main.py:21: DeprecationWarning: 
+  /app/app/main.py:21: DeprecationWarning: 
           on_event is deprecated, use lifespan event handlers instead.
   
           Read more about it in the
@@ -9,34 +13,34 @@ app/main.py:21
           
     @app.on_event("startup")
 
-../../../../../opt/pyvenv/lib/python3.13/site-packages/fastapi/applications.py:4579
-  /opt/pyvenv/lib/python3.13/site-packages/fastapi/applications.py:4579: DeprecationWarning: 
+../usr/local/lib/python3.12/site-packages/fastapi/applications.py:4675
+  /usr/local/lib/python3.12/site-packages/fastapi/applications.py:4675: DeprecationWarning: 
           on_event is deprecated, use lifespan event handlers instead.
   
           Read more about it in the
           [FastAPI docs for Lifespan Events](https://fastapi.tiangolo.com/advanced/events/).
           
-    return self.router.on_event(event_type)
+    return self.router.on_event(event_type)  # ty: ignore[deprecated]
 
 -- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
 ================================ tests coverage ================================
-_______________ coverage: platform linux, python 3.13.5-final-0 ________________
+_______________ coverage: platform linux, python 3.12.13-final-0 _______________
 
 Name                              Stmts   Miss Branch BrPart  Cover   Missing
 -----------------------------------------------------------------------------
 app/__init__.py                       0      0      0      0   100%
 app/api/__init__.py                   0      0      0      0   100%
-app/api/routes_accounts.py           25      0      4      2    93%   21->exit, 27->exit
+app/api/routes_accounts.py           25      0      4      0   100%
 app/api/routes_audit.py               9      0      0      0   100%
 app/core/__init__.py                  0      0      0      0   100%
 app/core/config.py                   11      0      0      0   100%
-app/core/errors.py                   35      5      4      1    85%   36, 41-42, 46-47
+app/core/errors.py                   35      0      4      0   100%
 app/core/logging.py                  13      0      2      0   100%
 app/core/tracing.py                  19      0      2      0   100%
 app/db/__init__.py                    0      0      0      0   100%
 app/db/models.py                     35      0      0      0   100%
-app/db/session.py                    12      3      2      0    79%   13-15
-app/main.py                          42      7      4      2    80%   22->exit, 28-29, 38-42, 45->exit
+app/db/session.py                    12      0      2      0   100%
+app/main.py                          42      3      4      1    91%   22->exit, 28-29, 40
 app/repositories/__init__.py          0      0      0      0   100%
 app/repositories/accounts.py          9      0      6      0   100%
 app/repositories/audit.py            16      0      2      0   100%
@@ -44,9 +48,9 @@ app/schemas/__init__.py               0      0      0      0   100%
 app/schemas/accounts.py              49      0      6      2    96%   20->exit, 25->exit
 app/schemas/audit.py                 12      0      0      0   100%
 app/services/__init__.py              0      0      0      0   100%
-app/services/account_service.py      71     11     16      1    84%   39-40, 90-98
+app/services/account_service.py      71      0     16      0   100%
 -----------------------------------------------------------------------------
-TOTAL                               358     26     48      8    91%
-Coverage XML written to file ../reports/account-coverage.xml
-Required test coverage of 80.0% reached. Total coverage: 91.13%
-7 passed, 2 warnings in 0.45s
+TOTAL                               358      3     48      3    99%
+Coverage XML written to file /reports/account-coverage.xml
+Required test coverage of 80.0% reached. Total coverage: 98.52%
+16 passed, 3 warnings in 0.38s
