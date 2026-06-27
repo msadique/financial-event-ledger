@@ -1,0 +1,19 @@
+from datetime import datetime, timezone
+from decimal import Decimal
+from sqlalchemy import DateTime, Index, JSON, Numeric, String
+from sqlalchemy.orm import Mapped, mapped_column
+from app.db.session import Base
+def utcnow(): return datetime.now(timezone.utc)
+class Event(Base):
+    __tablename__="events"
+    event_id: Mapped[str]=mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str]=mapped_column(String(128), nullable=False)
+    type: Mapped[str]=mapped_column(String(6), nullable=False)
+    amount: Mapped[Decimal]=mapped_column(Numeric(19,4), nullable=False)
+    currency: Mapped[str]=mapped_column(String(3), nullable=False)
+    event_timestamp: Mapped[datetime]=mapped_column(DateTime(timezone=True), nullable=False)
+    metadata_json: Mapped[dict|None]=mapped_column(JSON, nullable=True)
+    processing_status: Mapped[str]=mapped_column(String(16), nullable=False, default="PENDING")
+    created_at: Mapped[datetime]=mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime]=mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
+    __table_args__=(Index("ix_events_account_time", "account_id","event_timestamp","event_id"),)
