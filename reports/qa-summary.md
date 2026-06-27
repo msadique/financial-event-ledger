@@ -5,10 +5,10 @@
 | Suite | Result |
 |---|---|
 | Account Service unit/integration | 7 passed |
-| Event Gateway unit/integration | 10 passed |
+| Event Gateway unit/integration | 45 passed |
 | Public-API functional | 5 passed |
 | Account Service coverage | 91.13% |
-| Event Gateway coverage | 88.77% |
+| Event Gateway coverage | 100.00% |
 
 ## Covered quality areas
 

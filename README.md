@@ -532,9 +532,9 @@ Latest verified service test results after the bonus enhancements:
 | Service | Tests | Branch coverage |
 |---|---:|---:|
 | Account Service | 16 passed | **98.52%** |
-| Event Gateway | 28 passed | **89.40%** |
+| Event Gateway | 45 passed | **100.00%** |
 
-Both exceed the configured minimum coverage threshold of 80%.
+Both exceed the configured minimum coverage threshold of 80%. The Event Gateway now has full statement and branch coverage for the current codebase.
 
 Coverage reports:
 
@@ -542,7 +542,7 @@ Coverage reports:
 make coverage
 ```
 
-Artifacts are written under `reports/`.
+Artifacts are written under `reports/`. The additional edge-case tests are in `event-gateway/tests/test_bonus_coverage.py`.
 
 ## Pact contract tests
 
