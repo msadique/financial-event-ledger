@@ -6,6 +6,7 @@ services:
       LOG_LEVEL: INFO
     volumes:
       - account-data:/data
+      - ./reports:/reports
     ports:
       - "8081:8081"
     healthcheck:
@@ -27,6 +28,7 @@ services:
       LOG_LEVEL: INFO
     volumes:
       - gateway-data:/data
+      - ./reports:/reports
     ports:
       - "8080:8080"
     depends_on:
