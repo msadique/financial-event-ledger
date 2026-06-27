@@ -6,6 +6,8 @@ services:
       LOG_LEVEL: INFO
     volumes:
       - account-data:/data
+    ports:
+      - "8081:8081"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8081/health')"]
       interval: 5s
