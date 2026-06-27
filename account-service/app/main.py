@@ -4,7 +4,9 @@ from fastapi.responses import JSONResponse, Response
 from prometheus_client import CONTENT_TYPE_LATEST, Counter, Histogram, generate_latest
 from sqlalchemy import text
 from app.api.routes_accounts import router
+from app.api.routes_audit import router as audit_router
 from app.core.config import get_settings
+from app.core.errors import install_exception_handlers
 from app.core.logging import configure_logging
 from app.core.tracing import current_trace_id, tracing_middleware
 from app.db.session import Base, SessionLocal, engine
@@ -12,8 +14,9 @@ from app.db.session import Base, SessionLocal, engine
 settings=get_settings(); configure_logging(settings.log_level); logger=logging.getLogger(__name__)
 REQUESTS=Counter("account_http_requests_total", "HTTP requests", ["method","path","status"])
 LATENCY=Histogram("account_http_request_duration_seconds", "HTTP latency", ["method","path"])
-app=FastAPI(title="Event Ledger Account Service", version="0.1.0")
+app=FastAPI(title="Event Ledger Account Service", version="0.2.0")
 app.middleware("http")(tracing_middleware)
+install_exception_handlers(app)
 
 @app.on_event("startup")
 def startup(): Base.metadata.create_all(engine)
@@ -30,11 +33,6 @@ async def metrics_and_access_log(request: Request, call_next):
     logger.info("request completed", extra={"method":request.method,"path":template,"statusCode":response.status_code,"durationMs":round(duration*1000,2)})
     return response
 
-@app.exception_handler(Exception)
-async def generic_error(request, exc):
-    logger.exception("Unhandled exception")
-    return JSONResponse(status_code=500, content={"error":{"code":"INTERNAL_ERROR","message":"unexpected internal error","traceId":current_trace_id()}})
-
 @app.get("/health")
 def health():
     try:
@@ -47,3 +45,4 @@ def health():
 def metrics(): return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 app.include_router(router)
+app.include_router(audit_router)
