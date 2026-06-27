@@ -129,3 +129,75 @@ The circuit breaker is process-local, which is suitable for this exercise. In a 
 
 - `docs/requirements.docx`
 - `docs/design.docx`
+
+## AI-assisted SDLC deliverables
+
+The repository includes explicit artifacts for the requested AI-augmented workflow:
+
+- **Design Agent:** `docs/design.docx`, `docs/design.md`, and `docs/diagrams/`
+- **Development Agent:** centralized error contracts, JSON logging, trace propagation, and separate durable audit trails in both services
+- **QA Agent:** unit/integration tests, Docker functional tests, XML/terminal coverage reports, and a functional requirement matrix
+- **AI workflow:** `docs/ai-assisted-development.md`
+- **Commit strategy:** `docs/commit-plan.md`
+
+### Centralized errors
+
+API errors use a consistent contract:
+
+```json
+{
+  "error": {
+    "code": "EVENT_ID_CONFLICT",
+    "message": "eventId already exists with different event data",
+    "traceId": "...",
+    "retryable": false
+  }
+}
+```
+
+### Audit APIs
+
+Audit records are stored independently in each service database and can be inspected for a demonstration:
+
+```bash
+curl http://localhost:8080/audit/events/evt-001
+curl http://localhost:8081/audit/events/evt-001
+```
+
+### Docker tests and coverage
+
+The service images include their test extras so tests can run in the same environment as the applications:
+
+```bash
+make test-docker
+```
+
+Generate unit-test coverage reports:
+
+```bash
+make coverage
+```
+
+Current verified coverage:
+
+- Account Service: **91.13%**
+- Event Gateway: **88.77%**
+- Total unit/integration tests: **17 passed**
+
+Start services and run public-API functional tests:
+
+```bash
+docker compose up --build -d
+cd functional-tests
+python -m pip install -e .
+python -m pytest -v
+```
+
+Operational scenarios:
+
+```bash
+bash scripts/test-resiliency.sh
+bash scripts/test-persistence.sh
+```
+
+Coverage artifacts are under `reports/`.

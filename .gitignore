@@ -12,3 +12,8 @@ htmlcov/
 .DS_Store
 .idea/
 .vscode/
+
+# Coverage working files
+.coverage
+htmlcov/
+*.db
