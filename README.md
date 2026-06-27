@@ -1,70 +1,364 @@
 # Event Ledger
 
-A two-service financial event ledger that demonstrates idempotent processing, out-of-order event handling, synchronous REST communication, distributed trace propagation, structured logging, resiliency, health checks, metrics, Docker Compose, and automated tests.
+A two-service financial event ledger that demonstrates idempotent processing, out-of-order event handling, synchronous REST communication, distributed trace propagation, structured logging, resiliency, rate limiting, durable async fallback, health checks, Prometheus metrics, Pact contract testing, Docker Compose, and automated tests.
 
 ## Architecture
 
 ```text
 Client -> Event Gateway (SQLite) -> Account Service (SQLite)
              |                           |
-             +-- public event APIs       +-- balances and transaction ledger
+             +-- public event APIs       +-- balances
+             +-- event status            +-- transaction ledger
+             +-- audit records           +-- audit records
+             +-- fallback queue
 ```
 
-The services do not share a database or in-process state. The Gateway owns public event records. The Account Service owns balances and the applied transaction ledger.
+The services do not share a database or in-process state.
+
+- **Event Gateway** owns public events, processing status, rate limiting, downstream resiliency, the durable fallback queue, and Gateway audit records.
+- **Account Service** owns account balances, currency, the applied transaction ledger, and Account Service audit records.
 
 ## Key decisions
 
-- **Decimal money:** Python `Decimal` and SQL `NUMERIC(19, 4)` are used instead of floating point.
-- **Idempotency in both services:** `eventId` is a database primary key in each service. A matching replay returns the original result; a conflicting replay returns `409`.
-- **Out-of-order tolerance:** balances are additive, while event and transaction queries sort by `eventTimestamp`.
-- **Failure semantics:** the Gateway stores a new event as `PENDING`, calls the Account Service, then sets it to `APPLIED` or `FAILED`.
-- **Resiliency:** bounded timeout, exponential backoff with jitter, and a process-local circuit breaker protect the downstream call.
-- **Traceability:** `X-Trace-ID` is accepted/generated at the Gateway, propagated to the Account Service, logged by both, and returned in responses.
+### Decimal money
 
-## Start with Docker
+Python `Decimal` and SQL `NUMERIC(19, 4)` are used instead of floating point. Amounts and balances are serialized as strings, for example:
 
-```bash
-docker compose up --build
+```json
+{
+  "balance": "110.0000"
+}
 ```
 
-Gateway: `http://localhost:8080`  
-Gateway OpenAPI: `http://localhost:8080/docs`
+### Idempotency in both services
 
-The Account Service is internal to the Compose network. For manual development, run it on port `8081`.
+`eventId` is a database primary key in each service.
 
-## Manual setup
+```text
+New eventId                         -> apply once, return 201
+Same eventId + identical payload   -> do not apply again, return 200
+Same eventId + different payload   -> reject, return 409
+```
 
-Use Python 3.11+.
+An identical replay includes:
 
-Terminal 1:
+```text
+Idempotent-Replay: true
+```
+
+### Out-of-order tolerance
+
+Events may arrive in any order. Credits and debits are additive, so the final balance is independent of arrival order. Event and transaction queries sort by:
+
+```text
+eventTimestamp ASC, eventId ASC
+```
+
+### Processing states
+
+A new Gateway event is stored as `PENDING` before the Account Service call.
+
+```text
+PENDING -> APPLIED    downstream call succeeds
+PENDING -> QUEUED     downstream is unavailable and async fallback is enabled
+PENDING -> FAILED     downstream rejects the event or fallback is disabled
+QUEUED  -> APPLIED    background delivery succeeds after recovery
+QUEUED  -> FAILED     downstream later returns a permanent business error
+```
+
+### Resiliency
+
+The Gateway Account Service client uses:
+
+- Bounded request timeout
+- Limited retry attempts
+- Exponential backoff
+- Random jitter
+- A process-local circuit breaker
+
+### Durable async fallback
+
+When the Account Service is unavailable, the Gateway stores the event in its own SQLite database and creates a durable `pending_deliveries` record. The API returns `202 Accepted` with `processingStatus: QUEUED`.
+
+A background worker:
+
+1. Reads due deliveries from SQLite.
+2. Retries with bounded exponential backoff and jitter.
+3. Preserves the original trace ID.
+4. Safely handles the case where the Account Service applied the event before a timeout, because the Account Service is idempotent.
+5. Marks the Gateway event `APPLIED` and removes the queue record after success.
+
+The queue survives Gateway container restarts because the SQLite database is stored in a Docker volume.
+
+### Gateway rate limiting
+
+The Gateway uses a process-local sliding-window rate limiter keyed by client IP. It excludes operational and documentation endpoints such as `/health`, `/metrics`, `/docs`, and `/openapi.json`.
+
+When the limit is exceeded, the Gateway returns:
+
+```text
+429 Too Many Requests
+Retry-After: <seconds>
+X-RateLimit-Limit: <limit>
+X-RateLimit-Remaining: 0
+X-RateLimit-Reset: <seconds>
+```
+
+Example body:
+
+```json
+{
+  "error": {
+    "code": "RATE_LIMIT_EXCEEDED",
+    "message": "Too many requests; retry after the indicated delay",
+    "traceId": "...",
+    "retryable": true,
+    "details": {
+      "retryAfterSeconds": 30
+    }
+  }
+}
+```
+
+The limiter is intentionally process-local for this exercise. A production multi-instance deployment would normally use an API gateway, service mesh, or shared Redis-backed limiter.
+
+### Traceability
+
+`X-Trace-ID` is accepted or generated by the Gateway, logged, propagated to the Account Service, stored with queued deliveries, and returned in responses.
+
+## Technology stack
+
+- Python 3.11+
+- FastAPI and Uvicorn
+- SQLAlchemy and SQLite
+- Pydantic
+- HTTPX
+- Prometheus client
+- Pytest and pytest-cov
+- Pact Python V4 contracts
+- Docker and Docker Compose
+- GNU Make
+
+## Repository structure
+
+```text
+financial-event-ledger/
+├── account-service/
+│   ├── app/
+│   ├── tests/
+│   ├── Dockerfile
+│   └── pyproject.toml
+├── event-gateway/
+│   ├── app/
+│   │   ├── core/rate_limit.py
+│   │   ├── repositories/delivery_queue.py
+│   │   └── services/async_fallback.py
+│   ├── tests/
+│   ├── Dockerfile
+│   └── pyproject.toml
+├── contract-tests/
+│   ├── consumer/
+│   ├── provider/
+│   └── pacts/
+├── functional-tests/
+├── scripts/
+│   ├── test-resiliency.sh
+│   └── test-persistence.sh
+├── docs/
+├── reports/
+├── docker-compose.yml
+├── Makefile
+└── README.md
+```
+
+## Prerequisites
+
+- Docker Desktop with Docker Compose
+- GNU Make
+- Python 3.11+ for local development
+
+Verify:
+
+```bash
+docker --version
+docker compose version
+make --version
+python --version
+```
+
+On Windows, use Git Bash, Cygwin, WSL, or another shell capable of running Bash scripts.
+
+## Quick start
+
+```bash
+make up-build
+make ps
+```
+
+Endpoints:
+
+```text
+Gateway:         http://localhost:8080
+Gateway OpenAPI: http://localhost:8080/docs
+Gateway Health:  http://localhost:8080/health
+Gateway Metrics: http://localhost:8080/metrics
+Account Service: http://localhost:8081
+```
+
+Stop the application:
+
+```bash
+make down
+```
+
+## Make commands
+
+Show available commands:
+
+```bash
+make help
+```
+
+### Build and lifecycle
+
+```bash
+make build
+make up
+make up-detached
+make up-build
+make down
+make restart
+make ps
+```
+
+### Logs
+
+```bash
+make logs
+make logs-gateway
+make logs-account
+```
+
+### Tests
+
+```bash
+make test
+make test-account
+make test-gateway
+make test-docker
+make functional-test
+make contract-test
+```
+
+### Operational validation
+
+```bash
+make test-resiliency
+make test-persistence
+```
+
+### Coverage and complete validation
+
+```bash
+make coverage
+make verify
+```
+
+### Cleanup
+
+```bash
+make clean
+make clean-all
+```
+
+## Start with Docker Compose directly
+
+```bash
+docker compose up --build -d --wait
+docker compose ps
+docker compose logs -f
+```
+
+Stop services:
+
+```bash
+docker compose down
+```
+
+Remove services and data volumes:
+
+```bash
+docker compose down --volumes
+```
+
+## Configuration
+
+The main Gateway environment variables are:
+
+| Variable | Default | Purpose |
+|---|---:|---|
+| `ACCOUNT_SERVICE_URL` | `http://localhost:8081` | Account Service base URL |
+| `ACCOUNT_SERVICE_TIMEOUT_SECONDS` | `2` | Per-attempt timeout |
+| `ACCOUNT_SERVICE_MAX_ATTEMPTS` | `3` | Maximum synchronous attempts |
+| `CIRCUIT_BREAKER_FAILURE_THRESHOLD` | `5` | Failures before opening |
+| `CIRCUIT_BREAKER_RECOVERY_SECONDS` | `30` | Open-circuit recovery delay |
+| `RATE_LIMIT_ENABLED` | `true` | Enable Gateway rate limiting |
+| `RATE_LIMIT_REQUESTS` | `120` | Requests allowed per window |
+| `RATE_LIMIT_WINDOW_SECONDS` | `60` | Sliding-window duration |
+| `ASYNC_FALLBACK_ENABLED` | `true` | Queue events during downstream outages |
+| `ASYNC_FALLBACK_POLL_SECONDS` | `1` | Background queue polling interval |
+| `ASYNC_FALLBACK_BATCH_SIZE` | `25` | Deliveries processed per iteration |
+| `ASYNC_FALLBACK_BASE_BACKOFF_SECONDS` | `1` | Initial queue retry delay |
+| `ASYNC_FALLBACK_MAX_BACKOFF_SECONDS` | `60` | Maximum queue retry delay |
+| `ASYNC_FALLBACK_JITTER_SECONDS` | `0.25` | Maximum retry jitter |
+
+See `.env.example` and `docker-compose.yml` for the complete configuration.
+
+## Manual local setup
+
+### Account Service
 
 ```bash
 cd account-service
 python -m venv .venv
-source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e .[test]
-uvicorn app.main:app --host 0.0.0.0 --port 8081
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[test]"
+uvicorn app.main:app --host 0.0.0.0 --port 8081 --reload
 ```
 
-Terminal 2:
+Windows Command Prompt activation:
+
+```bat
+.venv\Scripts\activate
+```
+
+PowerShell activation:
+
+```powershell
+.venv\Scripts\Activate.ps1
+```
+
+### Event Gateway
 
 ```bash
 cd event-gateway
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .[test]
+python -m pip install --upgrade pip
+pip install -e ".[test]"
 export ACCOUNT_SERVICE_URL=http://localhost:8081
-uvicorn app.main:app --host 0.0.0.0 --port 8080
+uvicorn app.main:app --host 0.0.0.0 --port 8080 --reload
 ```
 
 ## API examples
 
-Submit an event:
+### Submit a credit event
 
 ```bash
 curl -i -X POST http://localhost:8080/events \
-  -H 'Content-Type: application/json' \
-  -H 'X-Trace-ID: demo-trace-001' \
+  -H "Content-Type: application/json" \
+  -H "X-Trace-ID: demo-trace-001" \
   -d '{
     "eventId": "evt-001",
     "accountId": "acct-123",
@@ -72,132 +366,266 @@ curl -i -X POST http://localhost:8080/events \
     "amount": "150.00",
     "currency": "USD",
     "eventTimestamp": "2026-05-15T14:02:11Z",
-    "metadata": {"source": "mainframe-batch", "batchId": "B-9042"}
+    "metadata": {
+      "source": "mainframe-batch",
+      "batchId": "B-9042"
+    }
   }'
 ```
 
-Query events and balance:
+Successful synchronous processing returns `201 Created`.
+
+### Submit a debit event
+
+```bash
+curl -i -X POST http://localhost:8080/events \
+  -H "Content-Type: application/json" \
+  -d '{
+    "eventId": "evt-002",
+    "accountId": "acct-123",
+    "type": "DEBIT",
+    "amount": "40.00",
+    "currency": "USD",
+    "eventTimestamp": "2026-05-15T15:00:00Z"
+  }'
+```
+
+### Query events and balance
 
 ```bash
 curl http://localhost:8080/events/evt-001
-curl 'http://localhost:8080/events?account=acct-123'
+curl "http://localhost:8080/events?account=acct-123"
 curl http://localhost:8080/accounts/acct-123/balance
 ```
 
-Health and metrics:
+## Duplicate behavior
+
+Identical replay:
+
+```text
+HTTP 200
+Idempotent-Replay: true
+```
+
+Conflicting replay using the same `eventId` but different event data:
+
+```text
+HTTP 409
+EVENT_ID_CONFLICT
+```
+
+## Async fallback example
+
+When the Account Service is down and fallback is enabled, a new event returns:
+
+```text
+HTTP 202 Accepted
+```
+
+```json
+{
+  "eventId": "evt-queued-001",
+  "processingStatus": "QUEUED"
+}
+```
+
+Poll the event until the worker applies it:
+
+```bash
+curl http://localhost:8080/events/evt-queued-001
+```
+
+After the Account Service recovers:
+
+```json
+{
+  "eventId": "evt-queued-001",
+  "processingStatus": "APPLIED"
+}
+```
+
+## Health and metrics
 
 ```bash
 curl http://localhost:8080/health
 curl http://localhost:8080/metrics
+curl http://localhost:8081/health
+curl http://localhost:8081/metrics
 ```
 
-## Run tests
-
-From the repository root:
-
-```bash
-make test
-```
-
-Or run each suite directly:
-
-```bash
-cd account-service && pytest -q
-cd event-gateway && pytest -q
-```
-
-The tests cover validation, balance calculations, duplicate and conflicting events, chronological ordering, downstream failure, retry/circuit behavior, trace propagation, and a full Gateway-to-Account-Service flow using an in-process ASGI transport.
-
-## API status behavior
-
-| Scenario | Status |
-|---|---:|
-| New event applied | 201 |
-| Identical duplicate | 200 |
-| Same ID with conflicting payload | 409 |
-| Invalid payload | 422 |
-| Unknown event/account | 404 |
-| Account Service unavailable | 503 |
-
-## Consistency and trade-offs
-
-There is no distributed transaction across the two SQLite databases. If the downstream request times out after being applied, the Gateway may mark its record `FAILED` even though the Account Service committed it. Account-Service idempotency makes a later safe replay possible. A production system would add an outbox, queue, or reconciliation worker.
-
-The circuit breaker is process-local, which is suitable for this exercise. In a horizontally scaled production deployment, each instance would maintain independent breaker state or use infrastructure-level resiliency.
-
-## Repository documents
-
-- `docs/requirements.docx`
-- `docs/design.docx`
-
-## AI-assisted SDLC deliverables
-
-The repository includes explicit artifacts for the requested AI-augmented workflow:
-
-- **Design Agent:** `docs/design.docx`, `docs/design.md`, and `docs/diagrams/`
-- **Development Agent:** centralized error contracts, JSON logging, trace propagation, and separate durable audit trails in both services
-- **QA Agent:** unit/integration tests, Docker functional tests, XML/terminal coverage reports, and a functional requirement matrix
-- **AI workflow:** `docs/ai-assisted-development.md`
-- **Commit strategy:** `docs/commit-plan.md`
-
-### Centralized errors
-
-API errors use a consistent contract:
+Gateway health includes async fallback information:
 
 ```json
 {
-  "error": {
-    "code": "EVENT_ID_CONFLICT",
-    "message": "eventId already exists with different event data",
-    "traceId": "...",
-    "retryable": false
+  "service": "event-gateway",
+  "status": "UP",
+  "database": "UP",
+  "dependencies": {
+    "accountService": "UP"
+  },
+  "asyncFallback": {
+    "enabled": true,
+    "queuedEvents": 0
   }
 }
 ```
 
-### Audit APIs
+Additional metrics include:
 
-Audit records are stored independently in each service database and can be inspected for a demonstration:
+```text
+gateway_rate_limit_rejections_total
+gateway_async_fallback_queued_total
+gateway_async_fallback_processed_total
+gateway_async_fallback_retry_total
+gateway_async_fallback_failed_total
+gateway_async_fallback_queue_depth
+```
+
+## Audit APIs
 
 ```bash
 curl http://localhost:8080/audit/events/evt-001
 curl http://localhost:8081/audit/events/evt-001
 ```
 
-### Docker tests and coverage
+Gateway actions may include:
 
-The service images include their test extras so tests can run in the same environment as the applications:
-
-```bash
-make test-docker
+```text
+EVENT_STORED
+EVENT_APPLIED
+EVENT_REPLAYED
+EVENT_CONFLICT_REJECTED
+EVENT_QUEUED
+EVENT_QUEUE_RETRY_SCHEDULED
+EVENT_APPLIED_FROM_QUEUE
+EVENT_QUEUE_REJECTED
 ```
 
-Generate unit-test coverage reports:
+## API status behavior
+
+| Scenario | Status |
+|---|---:|
+| New event applied synchronously | `201` |
+| New event accepted into fallback queue | `202` |
+| Identical duplicate | `200` |
+| Same ID with conflicting payload | `409` |
+| Rate limit exceeded | `429` |
+| Invalid payload | `422` |
+| Unknown event/account | `404` |
+| Account Service unavailable and fallback disabled | `503` |
+
+## Unit and integration tests
+
+```bash
+make test
+```
+
+Direct local commands:
+
+```bash
+cd account-service && python -m pytest -q
+cd event-gateway && python -m pytest -q
+```
+
+Latest verified service test results after the bonus enhancements:
+
+| Service | Tests | Branch coverage |
+|---|---:|---:|
+| Account Service | 16 passed | **98.52%** |
+| Event Gateway | 28 passed | **89.40%** |
+
+Both exceed the configured minimum coverage threshold of 80%.
+
+Coverage reports:
 
 ```bash
 make coverage
 ```
 
-Current verified coverage:
+Artifacts are written under `reports/`.
 
-- Account Service: **91.13%**
-- Event Gateway: **88.77%**
-- Total unit/integration tests: **17 passed**
+## Pact contract tests
 
-Start services and run public-API functional tests:
+The Gateway is the Pact consumer and the Account Service is the provider.
 
 ```bash
-docker compose up --build -d
-cd functional-tests
-python -m pip install -e .
-python -m pytest -v
+make contract-test
 ```
 
-Operational scenarios:
+The command performs two steps:
+
+1. Runs the real `AccountServiceClient` against a Pact mock server and writes a V4 contract under `contract-tests/pacts/`.
+2. Starts the real Account Service and uses the Pact verifier to replay the contract against it.
+
+The current Pact covers:
+
+- `POST /accounts/{accountId}/transactions`
+- `GET /accounts/{accountId}/balance`
+- Required request paths, JSON bodies, trace headers, status codes, and response fields
+
+Latest verified result:
+
+```text
+Consumer Pact generation: 1 passed
+Provider Pact verification: 1 passed
+```
+
+A Pact Broker is not required for local testing; the contract file is exchanged through `contract-tests/pacts/`. A production CI/CD workflow can publish it to Pact Broker or PactFlow.
+
+## Resiliency validation
 
 ```bash
-bash scripts/test-resiliency.sh
-bash scripts/test-persistence.sh
+make test-resiliency
 ```
 
-Coverage artifacts are under `reports/`.
+The script:
+
+1. Starts both services.
+2. Stops the Account Service.
+3. Submits an event through the Gateway.
+4. Confirms `202` and `processingStatus: QUEUED`.
+5. Restarts the Account Service.
+6. Polls until the queued event becomes `APPLIED`.
+7. Verifies the resulting balance.
+
+## Persistence validation
+
+```bash
+make test-persistence
+```
+
+This validates that Gateway events and Account Service balances survive container recreation through Docker volumes.
+
+## Consistency and trade-offs
+
+There is no distributed transaction across the two SQLite databases. A downstream timeout may occur after the Account Service committed a transaction. A later queued retry is safe because the Account Service detects the duplicate `eventId` and returns an idempotent replay response.
+
+The durable local queue improves availability, but it is still a single-Gateway design. A production system would normally consider:
+
+- Transactional outbox
+- Durable message broker
+- Multiple worker instances with row claiming or leases
+- Dead-letter policy and operator tooling
+- Reconciliation jobs
+- Shared or infrastructure-level circuit breaking and rate limiting
+
+## AI-assisted SDLC deliverables
+
+- Design: `docs/design.docx`, `docs/design.md`, and `docs/diagrams/`
+- Development notes: `docs/ai-assisted-development.md`
+- Commit strategy: `docs/commit-plan.md`
+- QA reports and coverage artifacts: `reports/`
+
+## Recommended validation workflow
+
+```bash
+make up-build
+make ps
+make test
+make contract-test
+make functional-test
+make test-resiliency
+make test-persistence
+make coverage
+make down
+```

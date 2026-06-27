@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 import uuid
-from sqlalchemy import DateTime, Index, JSON, Numeric, String
+from sqlalchemy import DateTime, Index, Integer, JSON, Numeric, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 from app.db.session import Base
 
@@ -23,6 +23,19 @@ class Event(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
     __table_args__ = (Index("ix_events_account_time", "account_id", "event_timestamp", "event_id"),)
+
+
+class PendingDelivery(Base):
+    __tablename__ = "pending_deliveries"
+    event_id: Mapped[str] = mapped_column(String(128), primary_key=True)
+    account_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    trace_id: Mapped[str] = mapped_column(String(128), nullable=False)
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False, index=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, onupdate=utcnow, nullable=False)
 
 
 class AuditRecord(Base):

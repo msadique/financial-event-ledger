@@ -1,5 +1,7 @@
 import os
 os.environ["DATABASE_URL"]="sqlite:///:memory:"
+os.environ["ASYNC_FALLBACK_ENABLED"]="false"
+os.environ["RATE_LIMIT_ENABLED"]="false"
 from fastapi.testclient import TestClient
 import pytest
 from sqlalchemy import create_engine

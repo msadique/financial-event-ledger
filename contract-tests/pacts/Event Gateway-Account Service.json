@@ -1,0 +1,218 @@
+{
+  "consumer": {
+    "name": "Event Gateway"
+  },
+  "interactions": [
+    {
+      "description": "apply a new credit transaction",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "no transaction exists",
+          "params": {
+            "accountId": "acct-contract-001",
+            "eventId": "evt-contract-001"
+          }
+        }
+      ],
+      "request": {
+        "body": {
+          "content": {
+            "accountId": "acct-contract-001",
+            "amount": "25.00",
+            "currency": "USD",
+            "eventId": "evt-contract-001",
+            "eventTimestamp": "2026-06-27T10:00:00Z",
+            "type": "CREDIT"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ],
+          "X-Trace-ID": [
+            "contract-trace-001"
+          ]
+        },
+        "method": "POST",
+        "path": "/accounts/acct-contract-001/transactions"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "accountId": "acct-contract-001",
+            "applied": true,
+            "appliedAt": "2026-06-27T10:00:01.000000",
+            "balance": "25.0000",
+            "currency": "USD",
+            "eventId": "evt-contract-001",
+            "idempotentReplay": false
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.accountId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.applied": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "boolean"
+                }
+              ]
+            },
+            "$.appliedAt": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?$"
+                }
+              ]
+            },
+            "$.balance": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.currency": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.eventId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.idempotentReplay": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "boolean"
+                }
+              ]
+            }
+          }
+        },
+        "status": 201
+      },
+      "type": "Synchronous/HTTP"
+    },
+    {
+      "description": "get an existing account balance",
+      "pending": false,
+      "providerStates": [
+        {
+          "name": "account exists",
+          "params": {
+            "accountId": "acct-contract-001",
+            "balance": "42.0000",
+            "currency": "USD"
+          }
+        }
+      ],
+      "request": {
+        "headers": {
+          "X-Trace-ID": [
+            "contract-trace-001"
+          ]
+        },
+        "method": "GET",
+        "path": "/accounts/acct-contract-001/balance"
+      },
+      "response": {
+        "body": {
+          "content": {
+            "accountId": "acct-contract-001",
+            "balance": "42.0000",
+            "currency": "USD",
+            "updatedAt": "2026-06-27T10:00:01.000000"
+          },
+          "contentType": "application/json",
+          "encoded": false
+        },
+        "headers": {
+          "Content-Type": [
+            "application/json"
+          ]
+        },
+        "matchingRules": {
+          "body": {
+            "$.accountId": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.balance": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.currency": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "type"
+                }
+              ]
+            },
+            "$.updatedAt": {
+              "combine": "AND",
+              "matchers": [
+                {
+                  "match": "regex",
+                  "regex": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?(?:Z|[+-]\\d{2}:?\\d{2})?$"
+                }
+              ]
+            }
+          }
+        },
+        "status": 200
+      },
+      "type": "Synchronous/HTTP"
+    }
+  ],
+  "metadata": {
+    "pactRust": {
+      "ffi": "0.5.4",
+      "models": "1.3.11"
+    },
+    "pactSpecification": {
+      "version": "4.0"
+    }
+  },
+  "provider": {
+    "name": "Account Service"
+  }
+}

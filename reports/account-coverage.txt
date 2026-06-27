@@ -53,4 +53,4 @@ app/services/account_service.py      71      0     16      0   100%
 TOTAL                               358      3     48      3    99%
 Coverage XML written to file /reports/account-coverage.xml
 Required test coverage of 80.0% reached. Total coverage: 98.52%
-16 passed, 3 warnings in 0.38s
+16 passed, 3 warnings in 0.35s

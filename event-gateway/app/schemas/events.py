@@ -4,7 +4,7 @@ from enum import Enum
 from typing import Any
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 class EventType(str,Enum): CREDIT="CREDIT"; DEBIT="DEBIT"
-class ProcessingStatus(str,Enum): PENDING="PENDING"; APPLIED="APPLIED"; FAILED="FAILED"
+class ProcessingStatus(str,Enum): PENDING="PENDING"; QUEUED="QUEUED"; APPLIED="APPLIED"; FAILED="FAILED"
 class EventCreate(BaseModel):
     model_config=ConfigDict(populate_by_name=True)
     event_id:str=Field(alias="eventId", min_length=1,max_length=128)
